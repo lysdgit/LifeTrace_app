@@ -329,27 +329,38 @@ class ScreenRecorder:
         if not self.deduplicate:
             return False
             
-        if screen_id not in self.last_hashes:
-            return False
-            
-        last_hash = self.last_hashes[screen_id]
-        try:
-            # 计算汉明距离
-            current = imagehash.hex_to_hash(image_hash)
-            previous = imagehash.hex_to_hash(last_hash)
-            distance = current - previous
-            
-            is_duplicate = distance <= self.hash_threshold
-            
-            # 简单的去重通知
-            if is_duplicate:
-                logger.info(f"屏幕 {screen_id}: 跳过重复截图")
-                print(f"[去重] 屏幕 {screen_id}: 跳过重复截图")
+        is_duplicate = False
+        
+        if screen_id in self.last_hashes:
+            last_hash = self.last_hashes[screen_id]
+            try:
+                # 计算汉明距离
+                current = imagehash.hex_to_hash(image_hash)
+                previous = imagehash.hex_to_hash(last_hash)
+                distance = current - previous
+                
+                is_duplicate = distance <= self.hash_threshold
+                
+                # 只有状态发生变化时才打印日志
+                was_duplicate = screen_id in getattr(self, '_last_duplicate_state', {})
+                if is_duplicate and not was_duplicate:
+                    logger.info(f"屏幕 {screen_id}: 检测到重复截图")
+                    print(f"[去重] 屏幕 {screen_id}: 检测到重复截图")
+                
+                # 更新状态记录
+                if not hasattr(self, '_last_duplicate_state'):
+                    self._last_duplicate_state = {}
+                self._last_duplicate_state[screen_id] = is_duplicate
+                    
+            except Exception as e:
+                logger.error(f"比较图像哈希失败: {e}")
+                # 出错时保持之前的状态
+                is_duplicate = False
+        
+            # 更新哈希记录
+            self.last_hashes[screen_id] = image_hash
             
             return is_duplicate
-        except Exception as e:
-            logger.error(f"比较图像哈希失败: {e}")
-            return False
     
     def _capture_screen(self, screen_id: int, app_name: str = None, window_title: str = None) -> Optional[str]:
         """截取指定屏幕"""
