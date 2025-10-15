@@ -1,8 +1,10 @@
 ![LifeTrace Logo](assets/rhn8yu8l.png)
 
-![GitHub stars](https://img.shields.io/github/stars/tangyuanbo1/LifeTrace_app?style=social) ![GitHub forks](https://img.shields.io/github/forks/tangyuanbo1/LifeTrace_app?style=social) ![GitHub issues](https://img.shields.io/github/issues/tangyuanbo1/LifeTrace_app) ![GitHub license](https://img.shields.io/github/license/tangyuanbo1/LifeTrace_app) ![Python version](https://img.shields.io/badge/python-3.8+-blue.svg) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
+![GitHub stars](https://img.shields.io/github/stars/tangyuanbo1/LifeTrace_app?style=social) ![GitHub forks](https://img.shields.io/github/forks/tangyuanbo1/LifeTrace_app?style=social) ![GitHub issues](https://img.shields.io/github/issues/tangyuanbo1/LifeTrace_app) ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg) ![Python version](https://img.shields.io/badge/python-3.13+-blue.svg) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
 
-[📖 Documentation](doc/README.md) • [🚀 Quick Start](#quick-start) • [💡 Features](#core-features) • [🔧 API Reference](#web-api-service) • [🤝 Contributing](#contributing)
+**Language**: [English](README.md) | [中文](README_CN.md)
+
+[📖 Documentation](doc/README.md) • [🚀 Quick Start](#deployment-and-configuration) • [💡 Features](#core-features) • [🔧 Development](#development-guide) • [🤝 Contributing](#contributing)
 
 # LifeTrace - Intelligent Life Recording System
 
@@ -51,13 +53,24 @@ LifeTrace is an AI-powered intelligent life recording system that helps users re
 ## Deployment and Configuration
 
 ### Environment Requirements
-- Python 3.8+
-- Supported OS: Windows, macOS, Linux
+- Python 3.13+
+- Supported OS: Windows, macOS
 - Optional: CUDA support (for GPU acceleration)
 
 ### Install Dependencies
+
+All dependency files are located in the `requirements/` directory.
+
+**For Windows:**
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/requirements_windows.txt
+
+```
+
+**For macOS:**
+```bash
+pip install -r requirements/requirements_macos.txt
+
 ```
 
 ### Initialize Database
@@ -192,5 +205,19 @@ Copyright © 2024 LifeTrace.org
 
 The content of this repository is bound by the following licenses:
 
-• The computer software is licensed under the [MIT](LICENSE) license.
+• The computer software is licensed under the [Apache License 2.0](LICENSE).
 • The learning resources in the `/doc` directory including their subdirectories thereon are copyright © 2024 LifeTrace.org
+
+### Apache License 2.0
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

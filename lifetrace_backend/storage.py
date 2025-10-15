@@ -163,11 +163,62 @@ class DatabaseManager:
     def _get_last_open_event(self, session: Session) -> Optional[Event]:
         """获取最后一个未结束的事件"""
         return session.query(Event).filter(Event.end_time.is_(None)).order_by(Event.start_time.desc()).first()
+    
+    def _should_reuse_event(self, old_app: Optional[str], old_title: Optional[str], 
+                           new_app: Optional[str], new_title: Optional[str]) -> bool:
+        """判断是否应该复用事件
+        
+        简单规则：
+        - 应用名相同 + 窗口标题相同 → 复用事件
+        - 应用名不同 或 窗口标题不同 → 创建新事件
+        
+        这样：
+        - 浏览器访问不同网页 → 不同事件
+        - 编辑器打开不同文件 → 不同事件  
+        - 同一文件持续编辑 → 同一事件
+        
+        Args:
+            old_app: 旧应用名
+            old_title: 旧窗口标题
+            new_app: 新应用名
+            new_title: 新窗口标题
+            
+        Returns:
+            是否应该复用事件
+        """
+        # 标准化处理
+        old_app_norm = (old_app or "").strip().lower()
+        new_app_norm = (new_app or "").strip().lower()
+        old_title_norm = (old_title or "").strip()
+        new_title_norm = (new_title or "").strip()
+        
+        # 应用名不同 → 不复用
+        if old_app_norm != new_app_norm:
+            logging.debug(f"应用切换: {old_app} → {new_app}")
+            return False
+        
+        # 窗口标题不同 → 不复用
+        if old_title_norm != new_title_norm:
+            logging.debug(f"窗口标题变化: {old_title} → {new_title}")
+            return False
+        
+        # 应用名和标题都相同 → 复用
+        return True
 
     def get_or_create_event(self, app_name: Optional[str], window_title: Optional[str], timestamp: Optional[datetime] = None) -> Optional[int]:
-        """按当前前台应用维护事件。
-        若存在未结束事件且应用名一致，则复用并可更新窗口标题；若应用变更，则关闭上一个事件并创建新事件。
-        返回事件ID。
+        """按当前前台应用和窗口标题维护事件。
+        
+        事件切分规则：
+        - 应用名相同 + 窗口标题相同 → 复用现有事件
+        - 应用名不同 或 窗口标题不同 → 创建新事件
+        
+        Args:
+            app_name: 应用名称
+            window_title: 窗口标题
+            timestamp: 时间戳
+            
+        Returns:
+            事件ID
         """
         try:
             closed_event_id = None  # 记录被关闭的事件ID
@@ -176,18 +227,27 @@ class DatabaseManager:
                 now_ts = timestamp or datetime.now()
                 last_event = self._get_last_open_event(session)
 
-                # 应用未变更，复用事件
-                if last_event and (last_event.app_name or "") == (app_name or ""):
-                    if window_title and window_title != last_event.window_title:
-                        last_event.window_title = window_title
-                    session.flush()
-                    return last_event.id
-
-                # 应用变更或没有正在进行的事件：关闭旧事件
-                if last_event and last_event.end_time is None:
-                    last_event.end_time = now_ts
-                    closed_event_id = last_event.id  # 记录被关闭的事件ID
-                    session.flush()
+                # 判断是否应该复用事件
+                if last_event:
+                    should_reuse = self._should_reuse_event(
+                        old_app=last_event.app_name,
+                        old_title=last_event.window_title,
+                        new_app=app_name,
+                        new_title=window_title
+                    )
+                    
+                    if should_reuse:
+                        # 复用事件，更新窗口标题
+                        if window_title and window_title != last_event.window_title:
+                            last_event.window_title = window_title
+                        session.flush()
+                        return last_event.id
+                    else:
+                        # 不复用，关闭旧事件
+                        last_event.end_time = now_ts
+                        closed_event_id = last_event.id
+                        session.flush()
+                        logging.info(f"关闭事件 {closed_event_id}: {last_event.app_name} - {last_event.window_title}")
 
                 # 创建新事件
                 new_event = Event(
@@ -198,6 +258,7 @@ class DatabaseManager:
                 session.add(new_event)
                 session.flush()
                 new_event_id = new_event.id
+                logging.info(f"创建新事件 {new_event_id}: {app_name} - {window_title}")
             
             # 在session关闭后，异步生成已关闭事件的摘要
             if closed_event_id:

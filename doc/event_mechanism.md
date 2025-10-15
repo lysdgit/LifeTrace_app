@@ -71,10 +71,11 @@ class Screenshot(Base):
 def get_or_create_event(self, app_name: Optional[str], 
                        window_title: Optional[str], 
                        timestamp: Optional[datetime] = None) -> Optional[int]:
-    """按当前前台应用维护事件。
-    若存在未结束事件且应用名一致，则复用并可更新窗口标题；
-    若应用变更，则关闭上一个事件并创建新事件。
-    返回事件ID。
+    """按当前前台应用和窗口标题维护事件。
+    
+    事件切分规则：
+    - 应用名相同 + 窗口标题相同 → 复用现有事件
+    - 应用名不同 或 窗口标题不同 → 创建新事件
     """
 ```
 
@@ -86,22 +87,38 @@ def get_or_create_event(self, app_name: Optional[str],
    ```
    - 查询 `end_time` 为 `NULL` 的最新事件
 
-2. **应用未变更 - 复用事件**
+2. **判断是否复用事件**
    ```python
-   if last_event and (last_event.app_name or "") == (app_name or ""):
-       # 可选：更新窗口标题
-       if window_title and window_title != last_event.window_title:
-           last_event.window_title = window_title
+   should_reuse = self._should_reuse_event(
+       old_app=last_event.app_name,
+       old_title=last_event.window_title,
+       new_app=app_name,
+       new_title=window_title
+   )
+   ```
+   
+   **判断逻辑（非常简单）：**
+   - 应用名相同 + 窗口标题相同 → 复用事件
+   - 应用名不同 或 窗口标题不同 → 创建新事件
+   
+   **应用场景示例：**
+   - 🌐 **浏览器**：访问不同网页（标题不同）→ 创建新事件
+   - 📝 **编辑器**：打开不同文件（标题不同）→ 创建新事件
+   - 📁 **文件管理器**：切换目录（标题不同）→ 创建新事件
+   - ✅ **持续编辑同一文件**（标题相同）→ 复用同一事件
+
+3. **复用事件**
+   ```python
+   if should_reuse:
+       # 应用名和标题都相同，继续使用同一事件
        return last_event.id
    ```
-   - 如果当前应用与上一个事件的应用相同，继续使用该事件
-   - 窗口标题可能在事件进行中更新（例如浏览器切换标签页）
 
-3. **应用变更 - 关闭旧事件并创建新事件**
+4. **创建新事件**
    ```python
    # 关闭旧事件
-   if last_event and last_event.end_time is None:
-       last_event.end_time = now_ts
+   last_event.end_time = now_ts
+   closed_event_id = last_event.id
    
    # 创建新事件
    new_event = Event(
@@ -112,8 +129,8 @@ def get_or_create_event(self, app_name: Optional[str],
    session.add(new_event)
    return new_event.id
    ```
-   - 如果应用名称不同，将上一个事件的 `end_time` 设置为当前时间
-   - 创建新事件，`end_time` 保持为 `NULL`（表示正在进行）
+   - 关闭旧事件并触发AI摘要生成
+   - 创建新事件
 
 ### 2. 截图录制集成
 
@@ -278,13 +295,66 @@ if self._is_app_blacklisted(app_name, window_title):
 
 **实现位置：** `lifetrace_backend/server.py:search_events()`
 
+## 事件切分效果示例
+
+### 浏览器场景（不同网页 = 不同事件）
+
+```
+时间   应用          窗口标题                      行为             事件ID
+──────────────────────────────────────────────────────────────────────
+10:00  chrome.exe   "GitHub - LifeTrace"         创建事件1         1
+10:02  chrome.exe   "GitHub - LifeTrace"         复用事件1         1
+                    (标题相同，继续浏览同一页面)
+10:05  chrome.exe   "GitHub - Issues"            创建事件2         2
+                    (标题不同，切换到Issues页面)
+10:10  chrome.exe   "YouTube - Music"            创建事件3         3
+                    (标题不同，访问YouTube)
+10:12  chrome.exe   "YouTube - Music"            复用事件3         3
+                    (标题相同，继续观看)
+10:20  code.exe     "main.py - VSCode"           创建事件4         4
+                    (应用切换)
+```
+
+**结果：**
+- ✅ 事件1：浏览 GitHub - LifeTrace 页面
+- ✅ 事件2：浏览 GitHub - Issues 页面
+- ✅ 事件3：观看 YouTube 音乐
+- ✅ 事件4：编写 main.py
+
+### 编辑器场景（不同文件 = 不同事件）
+
+```
+时间   应用          窗口标题                      行为             事件ID
+──────────────────────────────────────────────────────────────────────
+11:00  code.exe     "main.py - VSCode"           创建事件1         1
+11:03  code.exe     "main.py - VSCode"           复用事件1         1
+                    (标题相同，继续编辑同一文件)
+11:05  code.exe     "utils.py - VSCode"          创建事件2         2
+                    (标题不同，切换到utils.py)
+11:10  code.exe     "config.yaml - VSCode"       创建事件3         3
+                    (标题不同，切换到config.yaml)
+11:15  chrome.exe   "Stack Overflow"             创建事件4         4
+                    (应用切换)
+```
+
+**结果：**
+- ✅ 事件1：编辑 main.py
+- ✅ 事件2：编辑 utils.py
+- ✅ 事件3：编辑 config.yaml
+- ✅ 事件4：查阅 Stack Overflow
+
 ## 使用场景
 
 ### 1. 工作回顾
 
 用户可以按事件查看历史记录，而不是逐张浏览截图：
-- "今天上午我在 VS Code 里做了什么？"
-- "昨天下午在 Chrome 浏览器里看了哪些网页？"
+- "今天上午我在 VS Code 里编辑了哪些文件？"
+- "昨天下午在 Chrome 浏览器里访问了哪些网页？"
+
+得益于精确的事件切分，每个不同的页面/文件都会被记录为独立的事件：
+- ✅ 每个网页 = 1个事件
+- ✅ 每个编辑的文件 = 1个事件
+- ✅ 持续编辑同一文件 = 同一事件（不会被过度切分）
 
 ### 2. 行为统计
 
